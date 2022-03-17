@@ -1,45 +1,72 @@
-import { app } from '../../../../app';
-import request from 'supertest';
-import createConnection from '../../../../database';
-import { Connection } from 'typeorm';
-import { send } from 'process';
+import request from "supertest";
+import { v4 as uuidV4 } from "uuid";
+import { hash } from "bcryptjs";
+import { Connection } from "typeorm";
+import createConnection from "../../../../database";
+import { app } from "../../../../app";
 
 let connection: Connection;
-describe('Get balance controller', () => {
-  beforeAll(async () => {
-    connection = await createConnection();
-    await connection.runMigrations();
-  });
 
-  afterAll(async () => {
-    await connection.dropDatabase();
-    await connection.close();
-  });
+describe("Get Balance Controller", () => {
+    beforeAll(async () => {
+        connection = await createConnection();
+        await connection.runMigrations();
 
-  it('should be able to get all balances', async () => {
-    await request(app)
-      .post('/api/v1/users')
-      .send({
-        name: 'user test',
-        email: 'user@mail.com',
-        password: '123456'
-      });
+        const id = uuidV4();
+        const passsword = await hash('portugal', 8);
 
-    const session = await request(app).post('/api/v1/sessions').send({
-      email: 'user@mail.com',
-      password: '123456'
+        await connection.query(
+            `INSERT INTO users (id, name, email, password, created_at, updated_at)
+            VALUES ('${id}', 'Cristiano Ronaldo', 'ronald@cr7.com', '${passsword}', now(), now())`
+        );
     });
 
-    await request(app).post('/api/v1/statements/deposit')
-      .send({
-        amount: 100,
-        description: 'deposit test'
-      })
-      .set({ authorization: `Bearer ${session.body.token}`, })
+    afterAll(async () => {
+        await connection.dropDatabase();
+        await connection.close();
+    });
 
-    const response = await request(app).get('/api/v1/statements/balance').set({ authorization: `Bearer ${session.body.token}`, });
+    it("should be able to get a balance", async () => {
 
-    expect(response.body.balance).toEqual(100);
-    expect(response.body.statement.length).toEqual(1);
-  });
+        const authResponse = await request(app)
+            .post("/api/v1/sessions")
+            .send({
+                email: "ronald@cr7.com",
+                password: "portugal"
+            })
+
+        const { token } = authResponse.body;
+
+        const response = await request(app)
+            .get("/api/v1/statements/balance")
+            .set({
+                Authorization: `Bearer ${token}`,
+            });
+
+        expect(response.body).toHaveProperty("balance");
+        expect(response.body).toHaveProperty("statement");
+    })
+
+    it("should not be able to get a balance a nonexistent user", async () => {
+
+        const authResponse = await request(app)
+            .post("/api/v1/sessions")
+            .send({
+                email: "ronald@cr7.com",
+                password: "portugal"
+            })
+
+        const { token, user } = authResponse.body;
+
+        await connection.query(`DELETE FROM users WHERE id = '${user.id}'`);
+
+        const response = await request(app)
+            .get("/api/v1/statements/balance")
+            .set({
+                Authorization: `Bearer ${token}`,
+            });
+
+        expect(response.status).toBe(404);
+
+    })
 });

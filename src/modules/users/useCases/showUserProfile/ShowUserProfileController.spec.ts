@@ -1,38 +1,84 @@
-import { app } from '../../../../app';
-import request from 'supertest';
-import createConnection from '../../../../database';
-import { Connection } from 'typeorm';
+import request from "supertest";
+import { Connection } from "typeorm";
+import createConnection from "../../../../database";
+
+import { app } from "../../../../app";
 
 let connection: Connection;
-describe('Show user profile controller', () => {
-  beforeAll(async () => {
-    connection = await createConnection();
-    await connection.runMigrations();
-  });
 
-  afterAll(async () => {
-    await connection.dropDatabase();
-    await connection.close();
-  });
-
-  it('should be able to create a new user', async () => {
-    await request(app)
-      .post('/api/v1/users')
-      .send({
-        name: 'user test',
-        email: 'user@mail.com',
-        password: '123456'
-      });
-
-    const session = await request(app).post('/api/v1/sessions').send({
-      email: 'user@mail.com',
-      password: '123456'
+describe("Show User Profile Controller", () => {
+    beforeAll(async () => {
+        connection = await createConnection();
+        await connection.runMigrations();
     });
 
-    const profile = await request(app).get('/api/v1/profile').set({
-      authorization: `Bearer ${session.body.token}`,
+    afterAll(async () => {
+        await connection.dropDatabase();
+        await connection.close();
     });
 
-    expect(profile.body.name).toEqual('user test');
-  });
+    it("should be able to show a user profile", async () => {
+
+        await request(app)
+            .post("/api/v1/users")
+            .send({
+                name: "Lionel Messi",
+                email: "messi@messi.com",
+                password: "thebest"
+            })
+
+        const user = await request(app)
+            .post("/api/v1/sessions")
+            .send({
+                email: "messi@messi.com",
+                password: "thebest"
+            })
+
+        const { token } = user.body;
+
+        const response = await request(app)
+            .get("/api/v1/profile")
+            .set({
+                Authorization: `Bearer ${token}`,
+            });
+
+        expect(response.body).toHaveProperty("id");
+        expect(response.body).toHaveProperty("name");
+        expect(response.body).toHaveProperty("email");
+        expect(response.body.id).toBe(user.body.user.id);
+        expect(response.body.name).toBe(user.body.user.name);
+        expect(response.body.email).toBe(user.body.user.email);
+    })
+
+    it("should not be able to show a nonexistent user profile", async () => {
+
+        await request(app)
+            .post("/api/v1/users")
+            .send({
+                name: "Neymar Jr",
+                email: "neymar@jr.com",
+                password: "brazil"
+            })
+
+        const authResponse = await request(app)
+            .post("/api/v1/sessions")
+            .send({
+                email: "neymar@jr.com",
+                password: "brazil"
+            })
+
+        const { token, user } = authResponse.body;
+
+        await connection.query(`DELETE FROM users WHERE id = '${user.id}'`);
+
+        const response = await request(app)
+            .get("/api/v1/profile")
+            .set({
+                Authorization: `Bearer ${token}`,
+            });
+
+        expect(response.status).toBe(404);
+    });
+
+
 });
